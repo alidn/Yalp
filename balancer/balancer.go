@@ -1,6 +1,6 @@
 package balancer
 
-import "loadBalancer/backend"
+import "Yalp/backend"
 
 type Balancer interface {
 	NextBackend() (*backend.Backend, error)
