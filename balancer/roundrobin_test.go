@@ -21,8 +21,8 @@ func TestNextBackend(t *testing.T) {
 
 	t.Logf(testServer1.URL, testServer2.URL, testServer3.URL)
 
-	deadServerURL1 := "http://localhost:1111"
-	deadServerURL2 := "http://localhost:2222"
+	deadServerURL1 := "http://127.0.0.1:00000"
+	deadServerURL2 := "http://127.0.0.1:00001"
 
 	roundRobinBalancer, err := NewRoundRobinBalancerWithURLs(testServer1.URL, deadServerURL1, testServer2.URL, deadServerURL2, testServer3.URL)
 	if err != nil {
@@ -39,7 +39,6 @@ func TestNextBackend(t *testing.T) {
 	if nextBackend.Addr != testServer1.URL {
 		t.Errorf("first server url is wrong, got %s, expected %s", nextBackend.Addr, testServer1.URL)
 	}
-	println("finished first")
 
 	nextBackend, err = roundRobinBalancer.NextBackend()
 	if err != nil {
@@ -48,7 +47,6 @@ func TestNextBackend(t *testing.T) {
 	if nextBackend.Addr != testServer2.URL {
 		t.Errorf("second server url is wrong, got %s, expected %s", nextBackend.Addr, testServer2.URL)
 	}
-	println("finished second")
 
 	testServer3.Close()
 	nextBackend, err = roundRobinBalancer.NextBackend()
@@ -58,6 +56,4 @@ func TestNextBackend(t *testing.T) {
 	if nextBackend.Addr != testServer1.URL {
 		t.Errorf("third server url is wrong, got %s, expected %s", nextBackend.Addr, testServer1.URL)
 	}
-	println("finished third")
-
 }
