@@ -11,7 +11,7 @@ import (
 type RoundRobinBalancer struct {
 	backendPool   backend.BackendPool
 	curBackendIdx int
-	sync.RWMutex
+	sync.Mutex
 }
 
 // NewRoundRobinBalancer constructs and returns a RoundRobinBalancer with
@@ -41,27 +41,18 @@ func NewRoundRobinBalancerWithURLs(urls ...string) (*RoundRobinBalancer, error) 
 // it starts from the first server, and if no server is alive, it returns
 // and error.
 func (r *RoundRobinBalancer) NextBackend() (*backend.Backend, error) {
-	println("Here")
 	if len(r.backendPool.Backends) == 0 {
 		return nil, errors.New("There is no backend")
 	}
 
 	// TODO: should lock the backendpool?
-	// r.Lock()
-	// defer r.Unlock()
+	r.Lock()
+	defer r.Unlock()
 
 	i := (r.curBackendIdx + 1) % len(r.backendPool.Backends)
 
 	for counter := 0; counter < len(r.backendPool.Backends); counter++ {
 		candidateBackend := r.backendPool.Backends[i]
-		// should do a health-check here to prevent
-		// sending requests to dead servers?
-		isAlive, err := candidateBackend.CheckAlive()
-		if err != nil {
-			candidateBackend.IsAlive = false
-		} else {
-			candidateBackend.IsAlive = isAlive
-		}
 
 		if candidateBackend.IsAlive {
 			r.curBackendIdx = i
