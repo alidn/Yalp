@@ -3,15 +3,17 @@ package balancer
 import (
 	"Yalp/backend"
 	"errors"
-	"sync"
+	"log"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
 )
 
 // RoundRobinBalancer is a load balancer that uses the Round-Robin approach
 // to distribute requests across a group of servers.
 type RoundRobinBalancer struct {
-	backendPool   backend.BackendPool
+	backendPool   backend.Pool
 	curBackendIdx int
-	sync.Mutex
 }
 
 // NewRoundRobinBalancer constructs and returns a RoundRobinBalancer with
@@ -37,17 +39,40 @@ func NewRoundRobinBalancerWithURLs(urls ...string) (*RoundRobinBalancer, error) 
 	}, nil
 }
 
-// NextBackend returns the next avaiable server. If it reaches the end,
+// NewReverseProxy returns a New ReverseProxy that routes URLs to one of the servers among
+// the load balancer servers.
+func (r *RoundRobinBalancer) NewReverseProxy() *httputil.ReverseProxy {
+	director := func(req *http.Request) {
+		backend, err := r.NextBackend()
+		if err != nil {
+			log.Fatal("ERR, could not get the next backend", err)
+			// TODO: redirect to a url that shows the error?
+			return
+		}
+		targetURL := backend.URL
+		// directURL(req.URL, &targetURL)
+		// req.URL = &targetURL
+		req.URL.Scheme = targetURL.Scheme
+		req.URL.Host = targetURL.Host
+		req.Host = targetURL.Host
+		req.URL.RawQuery = targetURL.RawQuery
+		req.URL.Path = targetURL.Path
+	}
+
+	return &httputil.ReverseProxy{Director: director}
+}
+
+func directURL(source, target *url.URL) {
+	source = target
+}
+
+// NextBackend returns the next available server. If it reaches the end,
 // it starts from the first server, and if no server is alive, it returns
 // and error.
 func (r *RoundRobinBalancer) NextBackend() (*backend.Backend, error) {
 	if len(r.backendPool.Backends) == 0 {
 		return nil, errors.New("There is no backend")
 	}
-
-	// TODO: should lock the backendpool?
-	r.Lock()
-	defer r.Unlock()
 
 	i := (r.curBackendIdx + 1) % len(r.backendPool.Backends)
 
@@ -60,10 +85,10 @@ func (r *RoundRobinBalancer) NextBackend() (*backend.Backend, error) {
 		}
 		i = (i + 1) % len(r.backendPool.Backends)
 	}
-	return nil, errors.New("None of the servers is alive")
+	return nil, errors.New("none of the servers is alive")
 }
 
-func (r RoundRobinBalancer) GetCurIndex() int {
+func (r *RoundRobinBalancer) GetCurIndex() int {
 	return r.curBackendIdx
 }
 

@@ -1,8 +1,11 @@
 package balancer
 
-import "Yalp/backend"
+import (
+	"Yalp/backend"
+	"net/http/httputil"
+)
 
 type Balancer interface {
 	NextBackend() (*backend.Backend, error)
-	AddBackend(backend *backend.Backend)
+	NewReverseProxy() *httputil.ReverseProxy
 }

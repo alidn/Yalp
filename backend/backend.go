@@ -1,7 +1,6 @@
 package backend
 
 import (
-	"errors"
 	"net"
 	"net/url"
 	"sync"
@@ -10,8 +9,8 @@ import (
 
 // Backend represents a backend server.
 type Backend struct {
-	// TODO: consider using net.URL instead of raw string.
 	Addr string
+	URL  url.URL
 	// shows whether or not the server is alive.
 	IsAlive           bool
 	healthCheckTicker *time.Ticker
@@ -19,9 +18,15 @@ type Backend struct {
 }
 
 func NewBackend(addr string) (*Backend, error) {
+	parsedURL, err := url.Parse(addr)
+	if err != nil {
+		return nil, err
+	}
+
 	backend := &Backend{
 		Addr:    addr,
 		IsAlive: true,
+		URL:     *parsedURL,
 	}
 	go func() {
 		isAlive, err := backend.CheckAlive()
@@ -32,8 +37,6 @@ func NewBackend(addr string) (*Backend, error) {
 		}
 	}()
 
-	var err error
-	// TODO: find out why a new goroutine is absolutely necessary here.
 	go func() {
 		err2 := backend.StartHealthCheck()
 		err = err2
@@ -44,7 +47,7 @@ func NewBackend(addr string) (*Backend, error) {
 	return backend, nil
 }
 
-// StartHealthCheck starts the healt-check which checks if the backend
+// StartHealthCheck starts the health-check which checks if the backend
 // is alive every second.
 func (b *Backend) StartHealthCheck() error {
 	// TODO: decide a better duration or use a config file
@@ -56,7 +59,6 @@ func (b *Backend) StartHealthCheck() error {
 			if err != nil {
 				return err
 			}
-			// TODO: should lock the backend?
 			b.IsAlive = isAlive
 		}
 	}
@@ -74,11 +76,7 @@ func (b *Backend) CheckAlive() (bool, error) {
 	// println("Checking health", b.Addr)
 	b.Lock()
 	defer b.Unlock()
-	parsedURL, err := url.Parse(b.Addr)
-	if err != nil {
-		return false, errors.New("could not parser url: %s: %s" + b.Addr + " : " + err.Error())
-	}
-	tcpURL := parsedURL.Host
+	tcpURL := b.URL.Host
 
 	// The number of consecutive failed health checks that must occur before
 	// declaring the server unhealthy. This number is based on AWS Elastic Load Balancing
