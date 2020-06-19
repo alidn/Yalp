@@ -1,7 +1,7 @@
 package backend
 
 import (
-	"net"
+	"net/http"
 	"net/url"
 	"sync"
 	"time"
@@ -51,7 +51,7 @@ func NewBackend(addr string) (*Backend, error) {
 // is alive every second.
 func (b *Backend) StartHealthCheck() error {
 	// TODO: decide a better duration or use a config file
-	b.healthCheckTicker = time.NewTicker(time.Second)
+	b.healthCheckTicker = time.NewTicker(time.Second * 10)
 	for {
 		select {
 		case _ = <-b.healthCheckTicker.C:
@@ -76,7 +76,7 @@ func (b *Backend) CheckAlive() (bool, error) {
 	// println("Checking health", b.Addr)
 	b.Lock()
 	defer b.Unlock()
-	tcpURL := b.URL.Host
+	// _tcpURL := b.URL.Host
 
 	// The number of consecutive failed health checks that must occur before
 	// declaring the server unhealthy. This number is based on AWS Elastic Load Balancing
@@ -91,23 +91,11 @@ func (b *Backend) CheckAlive() (bool, error) {
 	consecutiveFailedHealthChecks := 0
 	var closeError error
 	for consecutiveFailedHealthChecks < unhealthyThreshold && consecutiveSuccessfulHealthChecks < healthyThreshold {
-		// the response timeout of 5 seconds is based on AWS Elastic Load Balancing
-		// default value. See here: https://docs.aws.amazon.com/elasticloadbalancing/latest/classic/elb-healthchecks.html
-		conn, err := net.DialTimeout("tcp", tcpURL, time.Second*5)
+		_, err := http.Get(b.Addr)
 		if err != nil {
 			consecutiveFailedHealthChecks++
 			consecutiveSuccessfulHealthChecks = 0
-			// println("In health check", b.Addr, "Unsuccessful")
 			continue
-		}
-
-		// println("In health check", b.Addr, "successful")
-
-		err = conn.Close()
-		if err != nil {
-			closeError = err
-			consecutiveSuccessfulHealthChecks++
-			consecutiveFailedHealthChecks = 0
 		}
 
 		consecutiveSuccessfulHealthChecks++

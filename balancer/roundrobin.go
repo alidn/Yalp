@@ -33,6 +33,7 @@ func NewRoundRobinBalancerWithURLs(urls ...string) (*RoundRobinBalancer, error) 
 	if err != nil {
 		return nil, err
 	}
+
 	return &RoundRobinBalancer{
 		backendPool:   *backendPool,
 		curBackendIdx: -1,
