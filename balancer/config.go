@@ -8,20 +8,26 @@ import (
 type Algorithm string
 
 const (
-	RoundRobin         = "round-robin"
-	WeightedRoundRobin = "weighted-round-robin"
+	RoundRobin         Algorithm = "round-robin"
+	WeightedRoundRobin Algorithm = "weighted-round-robin"
 )
 
+type SessionPersistenceConfig struct {
+	Enabled bool
+	// the cookie expiration time in seconds.
+	ExpirationPeriod int32 `yaml:"expiration_period"`
+}
+
 type Config struct {
-	Algorithm          Algorithm
-	SessionPersistence bool
+	Algorithm                Algorithm
+	SessionPersistenceConfig SessionPersistenceConfig `yaml:"session_persistence"`
 }
 
 func ReadConfigFile(filename string) (Config, error) {
 	config := Config{}
 	file, err := ioutil.ReadFile(filename)
 	if err != nil {
-		// TODO: return default config
+		// TODO: return default Config
 		return config, err
 	}
 
