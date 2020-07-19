@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"github.com/google/uuid"
 	"net/http"
 	"net/url"
 	"sync"
@@ -9,6 +10,7 @@ import (
 
 // Backend represents a backend server.
 type Backend struct {
+	Id   uuid.UUID
 	Addr string
 	URL  url.URL
 	// shows whether or not the server is alive.
@@ -24,6 +26,7 @@ func NewBackend(addr string) (*Backend, error) {
 	}
 
 	backend := &Backend{
+		Id:      uuid.New(),
 		Addr:    addr,
 		IsAlive: true,
 		URL:     *parsedURL,

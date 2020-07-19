@@ -3,17 +3,21 @@ package balancer
 import (
 	"Yalp/backend"
 	"errors"
+	"github.com/google/uuid"
 	"log"
 	"net/http"
 	"net/http/httputil"
-	"net/url"
+	"time"
 )
+
+const SessionPersistenceCookieName string = "LoadBalancerSessionCookie"
 
 // RoundRobinBalancer is a load balancer that uses the Round-Robin approach
 // to distribute requests across a group of servers.
 type RoundRobinBalancer struct {
 	backendPool   backend.Pool
 	curBackendIdx int
+	Config        Config
 }
 
 // NewRoundRobinBalancer constructs and returns a RoundRobinBalancer with
@@ -44,15 +48,39 @@ func NewRoundRobinBalancerWithURLs(urls ...string) (*RoundRobinBalancer, error) 
 // the load balancer servers.
 func (r *RoundRobinBalancer) NewReverseProxy() *httputil.ReverseProxy {
 	director := func(req *http.Request) {
-		backend, err := r.NextBackend()
-		if err != nil {
-			log.Fatal("ERR, could not get the next backend", err)
-			// TODO: redirect to a url that shows the error?
-			return
+		var nextBackend *backend.Backend = nil
+		if r.Config.SessionPersistenceConfig.Enabled {
+			for _, cookie := range req.Cookies() {
+				if cookie.Name == SessionPersistenceCookieName {
+					id, err := uuid.Parse(cookie.Value)
+					if err != nil {
+						log.Fatal("Could not parse session-persistence cookie value", err)
+						return
+					}
+					nextBackend, err = r.backendPool.Get(id)
+					if err != nil {
+						log.Fatal(err)
+						return
+					}
+				}
+			}
 		}
-		targetURL := backend.URL
-		// directURL(req.URL, &targetURL)
-		// req.URL = &targetURL
+		if nextBackend == nil {
+			var err error
+			nextBackend, err = r.NextBackend()
+			if err != nil {
+				log.Fatal("ERR, could not get the next nextBackend", err)
+				// TODO: redirect to a url that shows the error?
+				return
+			}
+			if r.Config.SessionPersistenceConfig.Enabled {
+				println("setting new cookie")
+				sessionPersistenceCookie := r.createCookie(nextBackend.Id)
+				req.AddCookie(&sessionPersistenceCookie)
+			}
+		}
+
+		targetURL := nextBackend.URL
 		req.URL.Scheme = targetURL.Scheme
 		req.URL.Host = targetURL.Host
 		req.Host = targetURL.Host
@@ -60,11 +88,30 @@ func (r *RoundRobinBalancer) NewReverseProxy() *httputil.ReverseProxy {
 		req.URL.Path = targetURL.Path
 	}
 
-	return &httputil.ReverseProxy{Director: director}
+	return &httputil.ReverseProxy{
+		Director: director,
+		ModifyResponse: func(response *http.Response) error {
+			for _, cookie := range response.Request.Cookies() {
+				if cookie.Name == SessionPersistenceCookieName {
+					println("Setting cookie")
+					cookie.Expires = time.Now().Add(time.Second * 1)
+					response.Header.Add("Set-Cookie", cookie.String())
+				}
+			}
+			return nil
+		},
+	}
 }
 
-func directURL(source, target *url.URL) {
-	source = target
+func (r *RoundRobinBalancer) createCookie(id uuid.UUID) http.Cookie {
+	expirationPeriod := time.Duration(r.Config.SessionPersistenceConfig.ExpirationPeriod) * time.Second
+	cookie := http.Cookie{
+		Name:     SessionPersistenceCookieName,
+		Value:    id.String(),
+		Expires:  time.Now().Add(expirationPeriod),
+		SameSite: http.SameSiteNoneMode,
+	}
+	return cookie
 }
 
 // NextBackend returns the next available server. If it reaches the end,
