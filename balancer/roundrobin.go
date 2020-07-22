@@ -3,11 +3,13 @@ package balancer
 import (
 	"Yalp/backend"
 	"errors"
-	"github.com/google/uuid"
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const SessionPersistenceCookieName string = "LoadBalancerSessionCookie"
@@ -44,39 +46,65 @@ func NewRoundRobinBalancerWithURLs(urls ...string) (*RoundRobinBalancer, error) 
 	}, nil
 }
 
-// NewReverseProxy returns a New ReverseProxy that routes URLs to one of the servers among
+func checkSessionPersistenceCookie(req *http.Request) (uuid.UUID, bool, error) {
+	for _, cookie := range req.Cookies() {
+		if cookie.Name == SessionPersistenceCookieName {
+			id, err := uuid.Parse(cookie.Value)
+			if err != nil {
+				return uuid.UUID{}, true, err
+			}
+			return id, true, nil
+		}
+	}
+	return uuid.UUID{}, false, nil
+}
+
+func (r *RoundRobinBalancer) checkBackendSession(req *http.Request) (*backend.Backend, bool, error) {
+	id, foundCookie, err := checkSessionPersistenceCookie(req)
+	if err != nil {
+		return nil, false, err
+	}
+	if foundCookie {
+		nextBackend, err := r.backendPool.Get(id)
+		if err != nil {
+			return nil, false, err
+		}
+		return nextBackend, true, nil
+	}
+	return nil, false, nil
+}
+
+// NewReverseProxy returns a new ReverseProxy that routes URLs to one of the servers among
 // the load balancer servers.
 func (r *RoundRobinBalancer) NewReverseProxy() *httputil.ReverseProxy {
 	director := func(req *http.Request) {
 		var nextBackend *backend.Backend = nil
 		if r.Config.SessionPersistenceConfig.Enabled {
-			for _, cookie := range req.Cookies() {
-				if cookie.Name == SessionPersistenceCookieName {
-					id, err := uuid.Parse(cookie.Value)
-					if err != nil {
-						log.Fatal("Could not parse session-persistence cookie value", err)
-						return
-					}
-					nextBackend, err = r.backendPool.Get(id)
-					if err != nil {
-						log.Fatal(err)
-						return
-					}
-				}
+			b, foundCookie, err := r.checkBackendSession(req)
+			if err != nil {
+				fmt.Errorf("checking the session of thr request")
+				return
+			}
+			if foundCookie {
+				nextBackend = b
 			}
 		}
+		// no session found, start a new one
 		if nextBackend == nil {
 			var err error
 			nextBackend, err = r.NextBackend()
 			if err != nil {
-				log.Fatal("ERR, could not get the next nextBackend", err)
-				// TODO: redirect to a url that shows the error?
+				log.Fatal("could not get the next nextBackend", err)
 				return
 			}
 			if r.Config.SessionPersistenceConfig.Enabled {
-				println("setting new cookie")
 				sessionPersistenceCookie := r.createCookie(nextBackend.Id)
 				req.AddCookie(&sessionPersistenceCookie)
+				c := http.Cookie{
+					Name:  "SessionExists",
+					Value: "false",
+				}
+				req.AddCookie(&c)
 			}
 		}
 
@@ -92,10 +120,23 @@ func (r *RoundRobinBalancer) NewReverseProxy() *httputil.ReverseProxy {
 		Director: director,
 		ModifyResponse: func(response *http.Response) error {
 			for _, cookie := range response.Request.Cookies() {
+				fmt.Printf("%s = %s\n", cookie.Name, cookie.Value)
+				if cookie.Name == "SessionExists" && cookie.Value == "true" {
+					return nil
+				}
+			}
+
+			for _, cookie := range response.Request.Cookies() {
 				if cookie.Name == SessionPersistenceCookieName {
-					println("Setting cookie")
-					cookie.Expires = time.Now().Add(time.Second * 1)
+					expirationPeriod := time.Duration(r.Config.SessionPersistenceConfig.ExpirationPeriod) * time.Second
+					cookie.Expires = time.Now().Add(expirationPeriod)
 					response.Header.Add("Set-Cookie", cookie.String())
+					c := http.Cookie{
+						Name:  "SessionExists",
+						Value: "true",
+					}
+					c.Expires = time.Now().Add(expirationPeriod)
+					response.Header.Add("Set-Cookie", c.String())
 				}
 			}
 			return nil
