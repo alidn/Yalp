@@ -1,231 +1,291 @@
 package balancer
 
 import (
+	"log"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
-	"reflect"
 	"testing"
 	"time"
 )
 
-// The tests should not be run concurrently; use `go test -p 1`.
+// DON'T FORGET! The tests should not be run concurrently; use `go test -p 1`.
 
-func TestNextBackend(t *testing.T) {
-	testServer1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		println("Got a request for server 1")
-	}))
-
-	testServer2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		println("Got a request for server 1")
-	}))
-
-	testServer3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		println("Got a request for server 1")
-	}))
-
-	t.Logf(testServer1.URL, testServer2.URL, testServer3.URL)
-
-	deadServerURL1 := "http://127.0.0.1:00010"
-	deadServerURL2 := "http://127.0.0.1:00011"
-
-	roundRobinBalancer, err := NewRoundRobinBalancerWithURLs(testServer1.URL, deadServerURL1, testServer2.URL, deadServerURL2, testServer3.URL)
-	if err != nil {
-		t.Error(err)
+func createTestServer(id int, logs *[]int) *httptest.Server {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		*logs = append(*logs, id)
 	}
-	time.Sleep(time.Second * 1)
+	return httptest.NewServer(http.HandlerFunc(handler))
+}
 
-	nextBackend, err := roundRobinBalancer.NextBackend()
-	if err != nil {
-		t.Error("ERR!", err)
-	}
-	if roundRobinBalancer.GetCurIndex() != 0 {
-		t.Errorf("index wrong, got %d, expected %d", roundRobinBalancer.GetCurIndex(), 0)
-	}
-	if nextBackend.Addr != testServer1.URL {
-		t.Errorf("first server url is wrong, got %s, expected %s", nextBackend.Addr, testServer1.URL)
-	}
+func assertInRange(t *testing.T, actual int, lowerbound int, upperbound int, message string) {
+	t.Helper()
 
-	nextBackend, err = roundRobinBalancer.NextBackend()
-	if err != nil {
-		t.Error("ERR!", err)
-	}
-	if nextBackend.Addr != testServer2.URL {
-		t.Errorf("second server url is wrong, got %s, expected %s", nextBackend.Addr, testServer2.URL)
-	}
-
-	testServer3.Close()
-	time.Sleep(time.Second * 1)
-
-	nextBackend, err = roundRobinBalancer.NextBackend()
-	if err != nil {
-		t.Error("ERR!", err)
-	}
-	if nextBackend.Addr != testServer1.URL {
-		t.Errorf("third server url is wrong, got %s, expected %s", nextBackend.Addr, testServer1.URL)
+	if actual < lowerbound || actual > upperbound {
+		t.Errorf("%s, received = %d, lowerbound = %d, upperbound = %d", message, actual, lowerbound, upperbound)
 	}
 }
 
-func TestNextBackend1(t *testing.T) {
-	testServer1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		println("Got a request for server 1")
-	}))
+func getClient(config Config, urls ...string) *httptest.Server {
+	loadBalancer, err := NewRoundRobinBalancerWithURLs(urls...)
 
-	testServer2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		println("Got a request for server 1")
-	}))
-
-	roundRobinBalancer, err := NewRoundRobinBalancerWithURLs(testServer1.URL, testServer2.URL)
 	if err != nil {
-		t.Error(err)
+		log.Fatal("Could not get the load balancer", err)
 	}
 
-	nextBackend, err := roundRobinBalancer.NextBackend()
-	if err != nil {
-		t.Error("ERR!", err)
-	}
-	if roundRobinBalancer.GetCurIndex() != 0 {
-		t.Errorf("index wrong, got %d, expected %d", roundRobinBalancer.GetCurIndex(), 0)
-	}
-	if nextBackend.Addr != testServer1.URL {
-		t.Errorf("first server url is wrong, got %s, expected %s", nextBackend.Addr, testServer1.URL)
-	}
+	loadBalancer.Config = config
 
-	nextBackend, err = roundRobinBalancer.NextBackend()
-	if err != nil {
-		t.Error("ERR!", err)
-	}
-	if nextBackend.Addr != testServer2.URL {
-		t.Errorf("second server url is wrong, got %s, expected %s", nextBackend.Addr, testServer2.URL)
-	}
+	reverseProxy := loadBalancer.NewReverseProxy()
 
-	testServer1.Close()
-	time.Sleep(time.Second * 1)
-	nextBackend, err = roundRobinBalancer.NextBackend()
+	return httptest.NewServer(reverseProxy)
+}
+
+func makeRequests(count int, url string) {
+	jar, err := cookiejar.New(nil)
 	if err != nil {
-		t.Error("ERR!", err)
+		log.Fatal("Couldn't create the cookie jar")
 	}
-	if nextBackend.Addr != testServer2.URL {
-		t.Errorf("third server url is wrong, got %s, expected %s", nextBackend.Addr, testServer2.URL)
+	client := http.Client{Jar: jar}
+	for i := 0; i < count; i++ {
+		client.Get(url)
 	}
 }
 
-func TestServerProxy(t *testing.T) {
-	resSeq := make([]int, 0)
-	server1 := newTestServer(&resSeq, 1)
-	server2 := newTestServer(&resSeq, 2)
-	server3 := newTestServer(&resSeq, 3)
-
-	balancer, err := NewRoundRobinBalancerWithURLs(server1.URL, server2.URL, server3.URL)
-	if err != nil {
-		t.Error("Could not get the balancer", err)
-	}
-
-	frontendProxy := httptest.NewServer(balancer.NewReverseProxy())
-	defer frontendProxy.Close()
-
-	for i := 0; len(resSeq) < 10; i++ {
-		_, err = http.Get(frontendProxy.URL)
-		if err != nil {
-			t.Error("Could not get the reponse", err)
+func countOccurences(list []int, target int) int {
+	count := 0
+	for _, x := range list {
+		if target == x {
+			count++
 		}
 	}
-
-	expected := []int{1, 2, 3, 1, 2, 3, 1, 2, 3, 1}
-	if !reflect.DeepEqual(expected, resSeq) {
-		t.Error("The sequence of servers isn't the same")
-	}
-
-	server1.Close()
-	server2.Close()
-	server3.Close()
+	return count
 }
 
-func TestServerProxyWithFailure(t *testing.T) {
-	resSeq := make([]int, 0)
-	server1 := newTestServer(&resSeq, 1)
-	server2 := newTestServer(&resSeq, 2)
-	server3 := newTestServer(&resSeq, 3)
+func TestOneServer(t *testing.T) {
+	logs := make([]int, 0)
+	testServer := createTestServer(1, &logs)
 
-	balancer, err := NewRoundRobinBalancerWithURLs(server1.URL, server2.URL, server3.URL)
+	config := Config{
+		Algorithm: "round-robin",
+		SessionPersistenceConfig: SessionPersistenceConfig{
+			Enabled:          false,
+			ExpirationPeriod: 0,
+		},
+	}
+	client := getClient(config, testServer.URL)
+	defer client.Close()
+
+	makeRequests(1000, client.URL)
+
+	assertInRange(t, len(logs), 950, 1050, "expected the server to receive ~1000 requests")
+
+	for _, log := range logs {
+		if log != 1 {
+			t.Errorf("expected the log to be 1, found %d", log)
+		}
+	}
+}
+
+func TestOneServerHighVolume(t *testing.T) {
+	logs := make([]int, 0)
+	testServer := createTestServer(1, &logs)
+
+	config := Config{
+		Algorithm: "round-robin",
+		SessionPersistenceConfig: SessionPersistenceConfig{
+			Enabled:          false,
+			ExpirationPeriod: 0,
+		},
+	}
+	client := getClient(config, testServer.URL)
+	defer client.Close()
+
+	makeRequests(10000, client.URL)
+
+	assertInRange(t, len(logs), 9900, 10100, "expected the server to receive ~10000 requests")
+
+	for _, log := range logs {
+		if log != 1 {
+			t.Errorf("expected the log to be 1, found %d", log)
+		}
+	}
+}
+
+func TestTwoServersNoSession(t *testing.T) {
+	logs := make([]int, 0)
+	testServer1 := createTestServer(1, &logs)
+	testServer2 := createTestServer(2, &logs)
+
+	config := Config{
+		Algorithm: "round-robin",
+		SessionPersistenceConfig: SessionPersistenceConfig{
+			Enabled:          false,
+			ExpirationPeriod: 0,
+		},
+	}
+
+	client := getClient(config, testServer1.URL, testServer2.URL)
+	defer client.Close()
+
+	makeRequests(1000, client.URL)
+
+	assertInRange(t, len(logs), 950, 1050, "expected the servers to receive ~1000 requests")
+
+	firstServerN := countOccurences(logs, 1)
+	secondServerN := countOccurences(logs, 2)
+
+	assertInRange(t, firstServerN, 450, 550, "expected the server 1 to receive ~500 requests")
+	assertInRange(t, secondServerN, 450, 550, "expected the server 2 to receive ~500 requests")
+}
+
+func TestTwoServersNoSessionHighVolume(t *testing.T) {
+	logs := make([]int, 0)
+	testServer1 := createTestServer(1, &logs)
+	testServer2 := createTestServer(2, &logs)
+
+	config := Config{
+		Algorithm: "round-robin",
+		SessionPersistenceConfig: SessionPersistenceConfig{
+			Enabled:          false,
+			ExpirationPeriod: 0,
+		},
+	}
+
+	client := getClient(config, testServer1.URL, testServer2.URL)
+	defer client.Close()
+
+	makeRequests(10000, client.URL)
+
+	assertInRange(t, len(logs), 9900, 10100, "expected the servers to receive ~1000 requests")
+
+	firstServerN := countOccurences(logs, 1)
+	secondServerN := countOccurences(logs, 2)
+
+	assertInRange(t, firstServerN, 4950, 5050, "expected the server 1 to receive ~500 requests")
+	assertInRange(t, secondServerN, 4950, 5050, "expected the server 2 to receive ~500 requests")
+}
+
+func TestTwoServersWithSessionPersistence(t *testing.T) {
+	logs := make([]int, 0)
+	testServer1 := createTestServer(1, &logs)
+	testServer2 := createTestServer(2, &logs)
+
+	config := Config{
+		Algorithm: "round-robin",
+		SessionPersistenceConfig: SessionPersistenceConfig{
+			Enabled:          true,
+			ExpirationPeriod: 3,
+		},
+	}
+
+	client := getClient(config, testServer1.URL, testServer2.URL)
+	defer client.Close()
+
+	makeRequests(100, client.URL)
+
+	assertInRange(t, len(logs), 100, 120, "expected the servers to receive ~100 requests")
+
+	firstServerN := countOccurences(logs, 1)
+	secondServerN := countOccurences(logs, 2)
+
+	assertInRange(t, firstServerN, 100, 120, "expected the server 1 to receive ~100 requests")
+	assertInRange(t, secondServerN, 0, 10, "expected the server 2 to receive ~0 requests")
+}
+
+func TestTwoServersWithSessionPersistence2(t *testing.T) {
+	logs := make([]int, 0)
+	testServer1 := createTestServer(1, &logs)
+	testServer2 := createTestServer(2, &logs)
+
+	config := Config{
+		Algorithm: "round-robin",
+		SessionPersistenceConfig: SessionPersistenceConfig{
+			Enabled:          true,
+			ExpirationPeriod: 3,
+		},
+	}
+
+	client := getClient(config, testServer1.URL, testServer2.URL)
+	defer client.Close()
+
+	jar, err := cookiejar.New(nil)
 	if err != nil {
-		t.Error("Could not get the balancer", err)
+		log.Fatal("Couldn't create the cookie jar")
+	}
+	c := http.Client{Jar: jar}
+	for i := 0; i < 3000; i++ {
+		c.Get(client.URL)
+	}
+	time.Sleep(time.Second * 3)
+	for i := 0; i < 1000; i++ {
+		c.Get(client.URL)
 	}
 
-	frontendProxy := httptest.NewServer(balancer.NewReverseProxy())
-	defer frontendProxy.Close()
+	assertInRange(t, len(logs), 3950, 4050, "expected the servers to receive ~4000 requests")
 
-	for i := 0; len(resSeq) < 10; i++ {
-		if i == 6 {
-			server2.Close()
-		}
-		_, err = http.Get(frontendProxy.URL)
-		if err != nil {
-			t.Error("Could not get the reponse", err)
-		}
-	}
+	firstServerN := countOccurences(logs, 1)
+	secondServerN := countOccurences(logs, 2)
 
-	expected := []int{1, 2, 3, 1, 2, 3, 1, 3, 1, 3}
-	if !reflect.DeepEqual(expected, resSeq) {
-		t.Errorf("The sequence of servers isn't the same\n, got %#v \n, expected %#v", resSeq, expected)
-	}
-
-	server1.Close()
-	server3.Close()
+	assertInRange(t, firstServerN, 2950, 3050, "expected the server 1 to receive ~3000 requests")
+	assertInRange(t, secondServerN, 950, 1050, "expected the server 2 to receive ~1000 requests")
 }
 
-func TestServerProxyWithFailure2(t *testing.T) {
-	resSeq := make([]int, 0)
-	server1 := newTestServer(&resSeq, 1)
-	server2 := newTestServer(&resSeq, 2)
-	server3 := newTestServer(&resSeq, 3)
+func TestThreeServersNoSession(t *testing.T) {
+	logs := make([]int, 0)
+	testServer1 := createTestServer(1, &logs)
+	testServer2 := createTestServer(2, &logs)
+	testServer3 := createTestServer(3, &logs)
 
-	balancer, err := NewRoundRobinBalancerWithURLs(server1.URL, server2.URL, server3.URL)
-	if err != nil {
-		t.Error("Could not get the balancer", err)
+	config := Config{
+		Algorithm: "round-robin",
+		SessionPersistenceConfig: SessionPersistenceConfig{
+			Enabled:          false,
+			ExpirationPeriod: 0,
+		},
 	}
 
-	frontendProxy := httptest.NewServer(balancer.NewReverseProxy())
-	defer frontendProxy.Close()
+	client := getClient(config, testServer1.URL, testServer2.URL, testServer3.URL)
+	defer client.Close()
 
-	for i := 0; len(resSeq) < 10; i++ {
-		if i == 2 {
-			server3.Close()
-		}
-		_, err = http.Get(frontendProxy.URL)
-		if err != nil {
-			t.Error("Could not get the reponse", err)
-		}
-	}
+	makeRequests(1000, client.URL)
 
-	expected := []int{1, 2, 1, 2, 1, 2, 1, 2, 1, 2}
-	if !reflect.DeepEqual(expected, resSeq) {
-		t.Errorf("The sequence of servers isn't the same\n, got %#v \n, expected %#v", resSeq, expected)
-	}
+	assertInRange(t, len(logs), 950, 1050, "expected the servers to receive ~1000 requests")
 
-	server1.Close()
-	server3.Close()
+	firstServerN := countOccurences(logs, 1)
+	secondServerN := countOccurences(logs, 2)
+	thirdServerN := countOccurences(logs, 3)
+
+	assertInRange(t, firstServerN, 250, 350, "expected the server 1 to receive ~500 requests")
+	assertInRange(t, secondServerN, 250, 350, "expected the server 2 to receive ~500 requests")
+	assertInRange(t, thirdServerN, 250, 350, "expected the server 3 to receive ~500 requests")
 }
 
-func TestServerProxyWithNoAliveBackend(t *testing.T) {
-	balancer, err := NewRoundRobinBalancerWithURLs("http://127.0.0.1:00010")
-	if err != nil {
-		t.Error("Could not get the balancer", err)
+func TestThreeServersNoSessionHighVolume(t *testing.T) {
+	logs := make([]int, 0)
+	testServer1 := createTestServer(1, &logs)
+	testServer2 := createTestServer(2, &logs)
+	testServer3 := createTestServer(3, &logs)
+
+	config := Config{
+		Algorithm: "round-robin",
+		SessionPersistenceConfig: SessionPersistenceConfig{
+			Enabled:          false,
+			ExpirationPeriod: 0,
+		},
 	}
 
-	time.Sleep(2 * time.Second)
+	client := getClient(config, testServer1.URL, testServer2.URL, testServer3.URL)
+	defer client.Close()
 
-	backend, err := balancer.NextBackend()
-	if backend != nil {
-		t.Errorf("Backend should be nil, got %+v", backend)
-	}
-	if err.Error() != "none of the servers is alive" {
-		t.Errorf("Got the wrong error")
-	}
-}
+	makeRequests(10000, client.URL)
 
-func newTestServer(resSeq *[]int, id int) *httptest.Server {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		*resSeq = append(*resSeq, id)
-	}))
-	return server
+	assertInRange(t, len(logs), 9950, 10100, "expected the servers to receive ~1000 requests")
+
+	firstServerN := countOccurences(logs, 1)
+	secondServerN := countOccurences(logs, 2)
+	thirdServerN := countOccurences(logs, 3)
+
+	assertInRange(t, firstServerN, 3300, 3360, "expected the server 1 to receive ~500 requests")
+	assertInRange(t, secondServerN, 3300, 3360, "expected the server 2 to receive ~500 requests")
+	assertInRange(t, thirdServerN, 3000, 3360, "expected the server 3 to receive ~500 requests")
 }
