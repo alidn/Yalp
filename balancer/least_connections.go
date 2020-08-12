@@ -3,8 +3,11 @@ package balancer
 import (
 	"Yalp/backend"
 	"errors"
+	"fmt"
 	"github.com/google/uuid"
+	"log"
 	"math"
+	"net/http"
 	"net/http/httputil"
 	"sync/atomic"
 )
@@ -24,6 +27,19 @@ func (b *BackendWithConnState) reduceOpenConnections(delta uint32) {
 
 type BackendPoolWithConnState struct {
 	Backends []*BackendWithConnState
+}
+
+func (b *BackendPoolWithConnState) getBackend(backendID string) (*BackendWithConnState, error) {
+	backendUUID, err := uuid.Parse(backendID)
+	if err != nil {
+		return nil, err
+	}
+	for _, bckend := range b.Backends {
+		if bckend.Id == backendUUID {
+			return bckend, nil
+		}
+	}
+	return nil, errors.New(fmt.Sprintf("did not find a backend with the given id: %s", backendID))
 }
 
 func NewBackendPoolFromURLs(urls ...string) (*BackendPoolWithConnState, error) {
@@ -62,6 +78,48 @@ func (l *LeastConnectionsBalancer) NextBackend() (*BackendWithConnState, error) 
 	return l.backendPool.Backends[index], nil
 }
 
-func (l *LeastConnectionsBalancer) NewReverseProxy() *httputil.ReverseProxy {
+func attachBackendIDCookie(request *http.Request, backendID uuid.UUID) {
+	cookie := &http.Cookie{
+		Name:  "BackendID",
+		Value: backendID.String(),
+	}
+	request.AddCookie(cookie)
+}
 
+func (l *LeastConnectionsBalancer) NewReverseProxy() *httputil.ReverseProxy {
+	director := func(req *http.Request) {
+		nextBackend, err := l.NextBackend()
+		if err != nil {
+			log.Fatal("Could not get the next backend")
+			return
+		}
+
+		attachBackendIDCookie(req, nextBackend.Id)
+		nextBackend.addOpenConnections(1)
+
+		targetURL := nextBackend.URL
+		req.URL.Scheme = targetURL.Scheme
+		req.URL.Host = targetURL.Host
+		req.Host = targetURL.Host
+		req.URL.RawQuery = targetURL.RawQuery
+		req.URL.Path = targetURL.Path
+	}
+
+	return &httputil.ReverseProxy{
+		Director: director,
+		ModifyResponse: func(response *http.Response) error {
+			for _, cookie := range response.Request.Cookies() {
+				if cookie.Name == "BackendID" {
+					backendID := cookie.Value
+					bckend, err := l.backendPool.getBackend(backendID)
+					if err != nil {
+						return err
+					}
+					bckend.reduceOpenConnections(1)
+					return nil
+				}
+			}
+			return nil
+		},
+	}
 }
