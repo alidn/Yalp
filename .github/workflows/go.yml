@@ -35,3 +35,8 @@ jobs:
 
     - name: Test
       run: go test ./...
+    - name: Codecov
+      uses: codecov/codecov-action@v1.0.12
+      with:
+        # User defined upload name. Visible in Codecov UI
+        name: Yalp # optional
