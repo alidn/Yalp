@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	"github.com/Yalp/balancer"
+	"github.com/alidn/Yalp/balancer"
 )
 
 func main() {

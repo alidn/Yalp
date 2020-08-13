@@ -3,7 +3,7 @@ package balancer
 import (
 	"net/http/httputil"
 
-	"github.com/Yalp/backend"
+	"github.com/alidn/Yalp/backend"
 )
 
 type Balancer interface {
