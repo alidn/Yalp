@@ -1,15 +1,16 @@
 package balancer
 
 import (
-	"Yalp/backend"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"log"
 	"math"
 	"net/http"
 	"net/http/httputil"
 	"sync/atomic"
+
+	"github.com/Yalp/backend"
+	"github.com/google/uuid"
 )
 
 type BackendWithConnState struct {

@@ -1,11 +1,12 @@
 package main
 
 import (
-	"Yalp/balancer"
 	"fmt"
 	"log"
 	"net/http"
 	"net/http/httptest"
+
+	"github.com/Yalp/balancer"
 )
 
 func main() {

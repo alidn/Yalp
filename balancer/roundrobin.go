@@ -1,13 +1,14 @@
 package balancer
 
 import (
-	"Yalp/backend"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"time"
+
+	"github.com/Yalp/backend"
 
 	"github.com/google/uuid"
 )
