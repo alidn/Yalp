@@ -9,16 +9,14 @@ import (
 	"time"
 )
 
-// DON'T FORGET! The tests should not be run concurrently; use `go test -p 1`.
-
-func createTestServer(id int, logs *[]int) *httptest.Server {
+func CreateTestServer(id int, logs *[]int) *httptest.Server {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		*logs = append(*logs, id)
 	}
 	return httptest.NewServer(http.HandlerFunc(handler))
 }
 
-func assertInRange(t *testing.T, actual int, lowerbound int, upperbound int, message string) {
+func AssertInRange(t *testing.T, actual int, lowerbound int, upperbound int, message string) {
 	t.Helper()
 
 	if actual < lowerbound || actual > upperbound {
@@ -26,7 +24,7 @@ func assertInRange(t *testing.T, actual int, lowerbound int, upperbound int, mes
 	}
 }
 
-func getClient(config Config, urls ...string) *httptest.Server {
+func GetClient(config Config, urls ...string) *httptest.Server {
 	loadBalancer, err := NewRoundRobinBalancerWithURLs(urls...)
 
 	if err != nil {
@@ -40,7 +38,7 @@ func getClient(config Config, urls ...string) *httptest.Server {
 	return httptest.NewServer(reverseProxy)
 }
 
-func makeRequests(count int, url string) {
+func MakeRequests(count int, url string) {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		log.Fatal("Couldn't create the cookie jar")
@@ -51,7 +49,7 @@ func makeRequests(count int, url string) {
 	}
 }
 
-func countOccurences(list []int, target int) int {
+func CountOccurrences(list []int, target int) int {
 	count := 0
 	for _, x := range list {
 		if target == x {
@@ -63,7 +61,7 @@ func countOccurences(list []int, target int) int {
 
 func TestOneServer(t *testing.T) {
 	logs := make([]int, 0)
-	testServer := createTestServer(1, &logs)
+	testServer := CreateTestServer(1, &logs)
 
 	config := Config{
 		Algorithm: "round-robin",
@@ -72,12 +70,12 @@ func TestOneServer(t *testing.T) {
 			ExpirationPeriod: 0,
 		},
 	}
-	client := getClient(config, testServer.URL)
+	client := GetClient(config, testServer.URL)
 	defer client.Close()
 
-	makeRequests(1000, client.URL)
+	MakeRequests(1000, client.URL)
 
-	assertInRange(t, len(logs), 950, 1050, "expected the server to receive ~1000 requests")
+	AssertInRange(t, len(logs), 950, 1050, "expected the server to receive ~1000 requests")
 
 	for _, log := range logs {
 		if log != 1 {
@@ -88,7 +86,7 @@ func TestOneServer(t *testing.T) {
 
 func TestOneServerHighVolume(t *testing.T) {
 	logs := make([]int, 0)
-	testServer := createTestServer(1, &logs)
+	testServer := CreateTestServer(1, &logs)
 
 	config := Config{
 		Algorithm: "round-robin",
@@ -97,12 +95,12 @@ func TestOneServerHighVolume(t *testing.T) {
 			ExpirationPeriod: 0,
 		},
 	}
-	client := getClient(config, testServer.URL)
+	client := GetClient(config, testServer.URL)
 	defer client.Close()
 
-	makeRequests(10000, client.URL)
+	MakeRequests(10000, client.URL)
 
-	assertInRange(t, len(logs), 9900, 10100, "expected the server to receive ~10000 requests")
+	AssertInRange(t, len(logs), 9900, 10100, "expected the server to receive ~10000 requests")
 
 	for _, log := range logs {
 		if log != 1 {
@@ -113,8 +111,8 @@ func TestOneServerHighVolume(t *testing.T) {
 
 func TestTwoServersNoSession(t *testing.T) {
 	logs := make([]int, 0)
-	testServer1 := createTestServer(1, &logs)
-	testServer2 := createTestServer(2, &logs)
+	testServer1 := CreateTestServer(1, &logs)
+	testServer2 := CreateTestServer(2, &logs)
 
 	config := Config{
 		Algorithm: "round-robin",
@@ -124,24 +122,24 @@ func TestTwoServersNoSession(t *testing.T) {
 		},
 	}
 
-	client := getClient(config, testServer1.URL, testServer2.URL)
+	client := GetClient(config, testServer1.URL, testServer2.URL)
 	defer client.Close()
 
-	makeRequests(1000, client.URL)
+	MakeRequests(1000, client.URL)
 
-	assertInRange(t, len(logs), 950, 1050, "expected the servers to receive ~1000 requests")
+	AssertInRange(t, len(logs), 950, 1050, "expected the servers to receive ~1000 requests")
 
-	firstServerN := countOccurences(logs, 1)
-	secondServerN := countOccurences(logs, 2)
+	firstServerN := CountOccurrences(logs, 1)
+	secondServerN := CountOccurrences(logs, 2)
 
-	assertInRange(t, firstServerN, 450, 550, "expected the server 1 to receive ~500 requests")
-	assertInRange(t, secondServerN, 450, 550, "expected the server 2 to receive ~500 requests")
+	AssertInRange(t, firstServerN, 450, 550, "expected the server 1 to receive ~500 requests")
+	AssertInRange(t, secondServerN, 450, 550, "expected the server 2 to receive ~500 requests")
 }
 
 func TestTwoServersNoSessionHighVolume(t *testing.T) {
 	logs := make([]int, 0)
-	testServer1 := createTestServer(1, &logs)
-	testServer2 := createTestServer(2, &logs)
+	testServer1 := CreateTestServer(1, &logs)
+	testServer2 := CreateTestServer(2, &logs)
 
 	config := Config{
 		Algorithm: "round-robin",
@@ -151,24 +149,24 @@ func TestTwoServersNoSessionHighVolume(t *testing.T) {
 		},
 	}
 
-	client := getClient(config, testServer1.URL, testServer2.URL)
+	client := GetClient(config, testServer1.URL, testServer2.URL)
 	defer client.Close()
 
-	makeRequests(10000, client.URL)
+	MakeRequests(10000, client.URL)
 
-	assertInRange(t, len(logs), 9900, 10100, "expected the servers to receive ~1000 requests")
+	AssertInRange(t, len(logs), 9900, 10100, "expected the servers to receive ~1000 requests")
 
-	firstServerN := countOccurences(logs, 1)
-	secondServerN := countOccurences(logs, 2)
+	firstServerN := CountOccurrences(logs, 1)
+	secondServerN := CountOccurrences(logs, 2)
 
-	assertInRange(t, firstServerN, 4950, 5050, "expected the server 1 to receive ~500 requests")
-	assertInRange(t, secondServerN, 4950, 5050, "expected the server 2 to receive ~500 requests")
+	AssertInRange(t, firstServerN, 4950, 5050, "expected the server 1 to receive ~500 requests")
+	AssertInRange(t, secondServerN, 4950, 5050, "expected the server 2 to receive ~500 requests")
 }
 
 func TestTwoServersWithSessionPersistence(t *testing.T) {
 	logs := make([]int, 0)
-	testServer1 := createTestServer(1, &logs)
-	testServer2 := createTestServer(2, &logs)
+	testServer1 := CreateTestServer(1, &logs)
+	testServer2 := CreateTestServer(2, &logs)
 
 	config := Config{
 		Algorithm: "round-robin",
@@ -178,24 +176,24 @@ func TestTwoServersWithSessionPersistence(t *testing.T) {
 		},
 	}
 
-	client := getClient(config, testServer1.URL, testServer2.URL)
+	client := GetClient(config, testServer1.URL, testServer2.URL)
 	defer client.Close()
 
-	makeRequests(100, client.URL)
+	MakeRequests(100, client.URL)
 
-	assertInRange(t, len(logs), 100, 120, "expected the servers to receive ~100 requests")
+	AssertInRange(t, len(logs), 100, 120, "expected the servers to receive ~100 requests")
 
-	firstServerN := countOccurences(logs, 1)
-	secondServerN := countOccurences(logs, 2)
+	firstServerN := CountOccurrences(logs, 1)
+	secondServerN := CountOccurrences(logs, 2)
 
-	assertInRange(t, firstServerN, 100, 120, "expected the server 1 to receive ~100 requests")
-	assertInRange(t, secondServerN, 0, 10, "expected the server 2 to receive ~0 requests")
+	AssertInRange(t, firstServerN, 100, 120, "expected the server 1 to receive ~100 requests")
+	AssertInRange(t, secondServerN, 0, 10, "expected the server 2 to receive ~0 requests")
 }
 
 func TestTwoServersWithSessionPersistence2(t *testing.T) {
 	logs := make([]int, 0)
-	testServer1 := createTestServer(1, &logs)
-	testServer2 := createTestServer(2, &logs)
+	testServer1 := CreateTestServer(1, &logs)
+	testServer2 := CreateTestServer(2, &logs)
 
 	config := Config{
 		Algorithm: "round-robin",
@@ -205,7 +203,7 @@ func TestTwoServersWithSessionPersistence2(t *testing.T) {
 		},
 	}
 
-	client := getClient(config, testServer1.URL, testServer2.URL)
+	client := GetClient(config, testServer1.URL, testServer2.URL)
 	defer client.Close()
 
 	jar, err := cookiejar.New(nil)
@@ -221,20 +219,20 @@ func TestTwoServersWithSessionPersistence2(t *testing.T) {
 		c.Get(client.URL)
 	}
 
-	assertInRange(t, len(logs), 3950, 4050, "expected the servers to receive ~4000 requests")
+	AssertInRange(t, len(logs), 3950, 4050, "expected the servers to receive ~4000 requests")
 
-	firstServerN := countOccurences(logs, 1)
-	secondServerN := countOccurences(logs, 2)
+	firstServerN := CountOccurrences(logs, 1)
+	secondServerN := CountOccurrences(logs, 2)
 
-	assertInRange(t, firstServerN, 2950, 3050, "expected the server 1 to receive ~3000 requests")
-	assertInRange(t, secondServerN, 950, 1050, "expected the server 2 to receive ~1000 requests")
+	AssertInRange(t, firstServerN, 2950, 3050, "expected the server 1 to receive ~3000 requests")
+	AssertInRange(t, secondServerN, 950, 1050, "expected the server 2 to receive ~1000 requests")
 }
 
 func TestThreeServersNoSession(t *testing.T) {
 	logs := make([]int, 0)
-	testServer1 := createTestServer(1, &logs)
-	testServer2 := createTestServer(2, &logs)
-	testServer3 := createTestServer(3, &logs)
+	testServer1 := CreateTestServer(1, &logs)
+	testServer2 := CreateTestServer(2, &logs)
+	testServer3 := CreateTestServer(3, &logs)
 
 	config := Config{
 		Algorithm: "round-robin",
@@ -244,27 +242,27 @@ func TestThreeServersNoSession(t *testing.T) {
 		},
 	}
 
-	client := getClient(config, testServer1.URL, testServer2.URL, testServer3.URL)
+	client := GetClient(config, testServer1.URL, testServer2.URL, testServer3.URL)
 	defer client.Close()
 
-	makeRequests(1000, client.URL)
+	MakeRequests(1000, client.URL)
 
-	assertInRange(t, len(logs), 950, 1050, "expected the servers to receive ~1000 requests")
+	AssertInRange(t, len(logs), 950, 1050, "expected the servers to receive ~1000 requests")
 
-	firstServerN := countOccurences(logs, 1)
-	secondServerN := countOccurences(logs, 2)
-	thirdServerN := countOccurences(logs, 3)
+	firstServerN := CountOccurrences(logs, 1)
+	secondServerN := CountOccurrences(logs, 2)
+	thirdServerN := CountOccurrences(logs, 3)
 
-	assertInRange(t, firstServerN, 250, 350, "expected the server 1 to receive ~500 requests")
-	assertInRange(t, secondServerN, 250, 350, "expected the server 2 to receive ~500 requests")
-	assertInRange(t, thirdServerN, 250, 350, "expected the server 3 to receive ~500 requests")
+	AssertInRange(t, firstServerN, 250, 350, "expected the server 1 to receive ~500 requests")
+	AssertInRange(t, secondServerN, 250, 350, "expected the server 2 to receive ~500 requests")
+	AssertInRange(t, thirdServerN, 250, 350, "expected the server 3 to receive ~500 requests")
 }
 
 func TestThreeServersNoSessionHighVolume(t *testing.T) {
 	logs := make([]int, 0)
-	testServer1 := createTestServer(1, &logs)
-	testServer2 := createTestServer(2, &logs)
-	testServer3 := createTestServer(3, &logs)
+	testServer1 := CreateTestServer(1, &logs)
+	testServer2 := CreateTestServer(2, &logs)
+	testServer3 := CreateTestServer(3, &logs)
 
 	config := Config{
 		Algorithm: "round-robin",
@@ -274,18 +272,18 @@ func TestThreeServersNoSessionHighVolume(t *testing.T) {
 		},
 	}
 
-	client := getClient(config, testServer1.URL, testServer2.URL, testServer3.URL)
+	client := GetClient(config, testServer1.URL, testServer2.URL, testServer3.URL)
 	defer client.Close()
 
-	makeRequests(10000, client.URL)
+	MakeRequests(10000, client.URL)
 
-	assertInRange(t, len(logs), 9950, 10100, "expected the servers to receive ~1000 requests")
+	AssertInRange(t, len(logs), 9950, 10100, "expected the servers to receive ~1000 requests")
 
-	firstServerN := countOccurences(logs, 1)
-	secondServerN := countOccurences(logs, 2)
-	thirdServerN := countOccurences(logs, 3)
+	firstServerN := CountOccurrences(logs, 1)
+	secondServerN := CountOccurrences(logs, 2)
+	thirdServerN := CountOccurrences(logs, 3)
 
-	assertInRange(t, firstServerN, 3300, 3360, "expected the server 1 to receive ~500 requests")
-	assertInRange(t, secondServerN, 3300, 3360, "expected the server 2 to receive ~500 requests")
-	assertInRange(t, thirdServerN, 3000, 3360, "expected the server 3 to receive ~500 requests")
+	AssertInRange(t, firstServerN, 3300, 3360, "expected the server 1 to receive ~500 requests")
+	AssertInRange(t, secondServerN, 3300, 3360, "expected the server 2 to receive ~500 requests")
+	AssertInRange(t, thirdServerN, 3000, 3360, "expected the server 3 to receive ~500 requests")
 }
