@@ -43,7 +43,7 @@ func (b *BackendPoolWithConnState) getBackend(backendID string) (*BackendWithCon
 	return nil, errors.New(fmt.Sprintf("did not find a backend with the given id: %s", backendID))
 }
 
-func NewBackendPoolFromURLs(urls ...string) (*BackendPoolWithConnState, error) {
+func NewConnBackendPoolFromURLs(urls ...string) (*BackendPoolWithConnState, error) {
 	pool := &BackendPoolWithConnState{
 		Backends: make([]*BackendWithConnState, 0),
 	}
@@ -58,6 +58,17 @@ func NewBackendPoolFromURLs(urls ...string) (*BackendPoolWithConnState, error) {
 		})
 	}
 	return pool, nil
+}
+
+func NewLeastConnectionBalancerFromURLs(config Config, urls ...string) (*LeastConnectionsBalancer, error) {
+	backendPool, err := NewConnBackendPoolFromURLs(urls...)
+	if err != nil {
+		return nil, err
+	}
+	return &LeastConnectionsBalancer{
+		backendPool: *backendPool,
+		Config:      config,
+	}, nil
 }
 
 type LeastConnectionsBalancer struct {
@@ -90,6 +101,7 @@ func attachBackendIDCookie(request *http.Request, backendID uuid.UUID) {
 func (l *LeastConnectionsBalancer) NewReverseProxy() *httputil.ReverseProxy {
 	director := func(req *http.Request) {
 		nextBackend, err := l.NextBackend()
+		log.Print(nextBackend.OpenConnections, nextBackend.URL)
 		if err != nil {
 			log.Fatal("Could not get the next backend")
 			return
@@ -109,17 +121,20 @@ func (l *LeastConnectionsBalancer) NewReverseProxy() *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
 		Director: director,
 		ModifyResponse: func(response *http.Response) error {
-			for _, cookie := range response.Request.Cookies() {
-				if cookie.Name == "BackendID" {
-					backendID := cookie.Value
-					bckend, err := l.backendPool.getBackend(backendID)
-					if err != nil {
-						return err
+			go func() error {
+				for _, cookie := range response.Request.Cookies() {
+					if cookie.Name == "BackendID" {
+						backendID := cookie.Value
+						bckend, err := l.backendPool.getBackend(backendID)
+						if err != nil {
+							return err
+						}
+						bckend.reduceOpenConnections(1)
+						return nil
 					}
-					bckend.reduceOpenConnections(1)
-					return nil
 				}
-			}
+				return nil
+			}()
 			return nil
 		},
 	}
