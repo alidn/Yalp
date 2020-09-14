@@ -1,2 +1,8 @@
 algorithm: "round-robin"
-sessionpersistence: true
+session_persistence:
+    enabled: false
+    expiration_period: 2
+backend_urls:
+    - https://www.facebook.com/
+    - https://github.com/
+    - https://anili.me
