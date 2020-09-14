@@ -12,6 +12,36 @@ import (
 func main() {
 	config, err := balancer.ReadConfigFile("config.yaml")
 	if err != nil {
+		panic("Could not find the config file")
+	}
+
+	urls := config.URLs
+	var loadBalancer balancer.Balancer
+	if config.Algorithm == balancer.RoundRobin {
+		loadBalancer, err = balancer.NewRoundRobinBalancerWithURLs(urls...)
+		if err != nil {
+			log.Fatal("could not start the round-robin balancer: ", err)
+		}
+	} else if config.Algorithm == balancer.LeastConnection {
+		loadBalancer, err = balancer.NewRoundRobinBalancerWithURLs(urls...)
+		if err != nil {
+			log.Fatal("could not start the least-connection balancer: ", err)
+		}
+	}
+
+	reverseProxy := loadBalancer.NewReverseProxy()
+	println("Server listening on port 9000")
+
+	err = http.ListenAndServe(":9000", reverseProxy)
+	if err != nil {
+		log.Fatal("ERROR, could not start the server", err)
+	}
+}
+
+func example() {
+	config, err := balancer.ReadConfigFile("config.yaml")
+
+	if err != nil {
 		log.Fatal("Couldn't read the config file", err)
 	}
 
