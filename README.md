@@ -2,6 +2,8 @@
 ![github actions](https://github.com/alidn/Yalp/workflows/Go/badge.svg)
 # Yalp
 
+Yalp is a simple load balancer written in Go. It supports Round-Robin and Session Persistence algorithms with session persistence.
+
 # Usage
 You can change the configurations in the config.yaml file (see [this](https://github.com/alidn/Yalp/blob/master/config.yaml) for an example)
 
