@@ -60,7 +60,7 @@ func checkSessionPersistenceCookie(req *http.Request) (uuid.UUID, bool, error) {
 	return uuid.UUID{}, false, nil
 }
 
-func (r *RoundRobinBalancer) checkBackendSession(req *http.Request) (*backend.Backend, bool, error) {
+func (r *RoundRobinBalancer) checkBackendSession(req *http.Request) (*backend.RoundRobinBackend, bool, error) {
 	id, foundCookie, err := checkSessionPersistenceCookie(req)
 	if err != nil {
 		return nil, false, err
@@ -79,11 +79,11 @@ func (r *RoundRobinBalancer) checkBackendSession(req *http.Request) (*backend.Ba
 // the load balancer servers.
 func (r *RoundRobinBalancer) NewReverseProxy() *httputil.ReverseProxy {
 	director := func(req *http.Request) {
-		var nextBackend *backend.Backend = nil
+		var nextBackend *backend.RoundRobinBackend = nil
 		if r.Config.SessionPersistenceConfig.Enabled {
 			b, foundCookie, err := r.checkBackendSession(req)
 			if err != nil {
-				fmt.Errorf("checking the session of thr request")
+				_ = fmt.Errorf("checking the session of thr request")
 				return
 			}
 			if foundCookie {
@@ -159,7 +159,7 @@ func (r *RoundRobinBalancer) createCookie(id uuid.UUID) http.Cookie {
 // NextBackend returns the next available server. If it reaches the end,
 // it starts from the first server, and if no server is alive, it returns
 // and error.
-func (r *RoundRobinBalancer) NextBackend() (*backend.Backend, error) {
+func (r *RoundRobinBalancer) NextBackend() (*backend.RoundRobinBackend, error) {
 	if len(r.backendPool.Backends) == 0 {
 		return nil, errors.New("There is no backend")
 	}
@@ -182,6 +182,6 @@ func (r *RoundRobinBalancer) GetCurIndex() int {
 	return r.curBackendIdx
 }
 
-func (r *RoundRobinBalancer) AddBackend(backend *backend.Backend) {
+func (r *RoundRobinBalancer) AddBackend(backend *backend.RoundRobinBackend) {
 	r.backendPool.Backends = append(r.backendPool.Backends, backend)
 }

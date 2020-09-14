@@ -1,33 +1,34 @@
 package balancer
 
 import (
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
+
+	"gopkg.in/yaml.v2"
 )
 
 type Algorithm string
 
 const (
-	RoundRobin         Algorithm = "round-robin"
-	WeightedRoundRobin Algorithm = "weighted-round-robin"
+	RoundRobin      Algorithm = "round-robin"
+	LeastConnection           = "least-connection"
 )
 
 type SessionPersistenceConfig struct {
-	Enabled bool
+	Enabled bool `yaml:"enabled"`
 	// the cookie expiration time in seconds.
 	ExpirationPeriod int32 `yaml:"expiration_period"`
 }
 
 type Config struct {
-	Algorithm                Algorithm
+	Algorithm                Algorithm                `yaml:"algorithm"`
 	SessionPersistenceConfig SessionPersistenceConfig `yaml:"session_persistence"`
+	URLs                     []string                 `yaml:"backend_urls"`
 }
 
 func ReadConfigFile(filename string) (Config, error) {
 	config := Config{}
 	file, err := ioutil.ReadFile(filename)
 	if err != nil {
-		// TODO: return default Config
 		return config, err
 	}
 

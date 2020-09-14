@@ -1,15 +1,20 @@
 package backend
 
 import (
-	"github.com/google/uuid"
 	"net/http"
 	"net/url"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
-// Backend represents a backend server.
-type Backend struct {
+type Backend interface {
+	CheckAlive() (bool, error)
+}
+
+// RoundRobinBackend represents a backend server.
+type RoundRobinBackend struct {
 	Id   uuid.UUID
 	Addr string
 	URL  url.URL
@@ -19,13 +24,13 @@ type Backend struct {
 	sync.RWMutex
 }
 
-func NewBackend(addr string) (*Backend, error) {
+func NewBackend(addr string) (*RoundRobinBackend, error) {
 	parsedURL, err := url.Parse(addr)
 	if err != nil {
 		return nil, err
 	}
 
-	backend := &Backend{
+	backend := &RoundRobinBackend{
 		Id:      uuid.New(),
 		Addr:    addr,
 		IsAlive: true,
@@ -52,7 +57,7 @@ func NewBackend(addr string) (*Backend, error) {
 
 // StartHealthCheck starts the health-check which checks if the backend
 // is alive every second.
-func (b *Backend) StartHealthCheck() error {
+func (b *RoundRobinBackend) StartHealthCheck() error {
 	// TODO: decide a better duration or use a config file
 	b.healthCheckTicker = time.NewTicker(time.Second * 10)
 	for {
@@ -68,14 +73,14 @@ func (b *Backend) StartHealthCheck() error {
 }
 
 // StopHealthCheck stops the health-check ticker.
-func (b *Backend) StopHealthCheck() {
+func (b *RoundRobinBackend) StopHealthCheck() {
 	b.healthCheckTicker.Stop()
 }
 
 // CheckAlive checks if the backend is still alive using a TCP connection
 // with a timeout of 2 seconds. It returns an error if the TCP connection
 // fails.
-func (b *Backend) CheckAlive() (bool, error) {
+func (b *RoundRobinBackend) CheckAlive() (bool, error) {
 	// println("Checking health", b.Addr)
 	b.Lock()
 	defer b.Unlock()

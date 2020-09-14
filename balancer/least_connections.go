@@ -14,7 +14,7 @@ import (
 )
 
 type BackendWithConnState struct {
-	backend.Backend
+	backend.RoundRobinBackend
 	OpenConnections uint32
 }
 
@@ -53,8 +53,8 @@ func NewConnBackendPoolFromURLs(urls ...string) (*BackendPoolWithConnState, erro
 			return nil, err
 		}
 		pool.Backends = append(pool.Backends, &BackendWithConnState{
-			Backend:         *b,
-			OpenConnections: 0,
+			RoundRobinBackend: *b,
+			OpenConnections:   0,
 		})
 	}
 	return pool, nil
@@ -101,7 +101,7 @@ func attachBackendIDCookie(request *http.Request, backendID uuid.UUID) {
 func (l *LeastConnectionsBalancer) NewReverseProxy() *httputil.ReverseProxy {
 	director := func(req *http.Request) {
 		nextBackend, err := l.NextBackend()
-		log.Print(nextBackend.OpenConnections, nextBackend.URL)
+		// log.Print(nextBackend.OpenConnections, nextBackend.URL)
 		if err != nil {
 			log.Fatal("Could not get the next backend")
 			return

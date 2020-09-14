@@ -7,16 +7,16 @@ import (
 )
 
 type Pool struct {
-	Backends []*Backend
+	Backends []*RoundRobinBackend
 }
 
 func NewBackendPool() *Pool {
 	return &Pool{
-		Backends: make([]*Backend, 0),
+		Backends: make([]*RoundRobinBackend, 0),
 	}
 }
 
-func (p *Pool) Get(id uuid.UUID) (*Backend, error) {
+func (p *Pool) Get(id uuid.UUID) (*RoundRobinBackend, error) {
 	for _, backend := range p.Backends {
 		if backend.Id == id {
 			return backend, nil
@@ -29,7 +29,7 @@ func (p *Pool) Get(id uuid.UUID) (*Backend, error) {
 // given urls.
 func NewBackendPoolFromURLs(urls ...string) (*Pool, error) {
 	backendPool := &Pool{
-		Backends: make([]*Backend, 0),
+		Backends: make([]*RoundRobinBackend, 0),
 	}
 	for _, url := range urls {
 		backend, err := NewBackend(url)
